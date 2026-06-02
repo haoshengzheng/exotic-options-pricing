@@ -34,7 +34,7 @@ class VanillaBSM:
         d1 = (np.log(self.S / self.K) + (self.b + 0.5 * self.sigma ** 2) * self.T_trade) / \
              (self.sigma * np.sqrt(self.T_trade))
         d2 = d1 - self.sigma * np.sqrt(self.T_trade)
-        return phi * (self.S * np.exp((self.b - self.r) * self.T_cal) * norm.cdf(phi * d1) -
+        return phi * (self.S * np.exp(self.b * self.T_trade - self.r * self.T_cal) * norm.cdf(phi * d1) -
                       self.K * np.exp(-self.r * self.T_cal) * norm.cdf(phi * d2))
 
     def _d1_d2(self):

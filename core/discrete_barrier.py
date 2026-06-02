@@ -40,7 +40,7 @@ class HaugBarrierDualTime:
     phi = +1 for call, -1 for put
     eta = +1 for down-barrier, -1 for up-barrier
     """
-    def __init__(self, S, X, H, T_cal, T_trade, r, b, sigma, K=0):
+    def __init__(self, S, X, H, T_cal, T_trade, r, b, sigma, K=0.0):
         self.S, self.X, self.H = S, X, H
         self.T_cal, self.T_trade = T_cal, T_trade
         self.r, self.b, self.sigma, self.K = r, b, sigma, K
@@ -62,20 +62,20 @@ class HaugBarrierDualTime:
 
     def term_A(self, phi):
         """Vanilla-like term anchored at strike X."""
-        df_S = np.exp((self.b - self.r) * self.T_cal)   # spot discount factor
+        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)   # spot discount factor
         df_X = np.exp(-self.r * self.T_cal)             # strike discount factor
         return (phi * self.S * df_S * norm.cdf(phi * self.x1)
                 - phi * self.X * df_X * norm.cdf(phi * self.x1 - phi * self.sigmaT))
 
     def term_B(self, phi):
         """Vanilla-like term anchored at barrier H."""
-        df_S = np.exp((self.b - self.r) * self.T_cal)
+        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         return (phi * self.S * df_S * norm.cdf(phi * self.x2)
                 - phi * self.X * df_X * norm.cdf(phi * self.x2 - phi * self.sigmaT))
 
     def term_C(self, phi, eta):
-        df_S = np.exp((self.b - self.r) * self.T_cal)
+        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         pow1 = (self.H / self.S) ** (2 * (self.mu + 1))
         pow2 = (self.H / self.S) ** (2 * self.mu)
@@ -83,7 +83,7 @@ class HaugBarrierDualTime:
                 - phi * self.X * df_X * pow2 * norm.cdf(eta * self.y1 - eta * self.sigmaT))
 
     def term_D(self, phi, eta):
-        df_S = np.exp((self.b - self.r) * self.T_cal)
+        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         pow1 = (self.H / self.S) ** (2 * (self.mu + 1))
         pow2 = (self.H / self.S) ** (2 * self.mu)
@@ -250,11 +250,11 @@ class DiscreteBarrierPricer:
         d1 = (np.log(S / X) + (b + 0.5 * sigma ** 2) * T_trade) / (sigma * np.sqrt(T_trade))
         d2 = d1 - sigma * np.sqrt(T_trade)
         if is_call:
-            price = S * np.exp((b - r) * T_cal) * norm.cdf(d1) \
+            price = S * np.exp(b * T_trade - r * T_cal) * norm.cdf(d1) \
                     - X * np.exp(-r * T_cal) * norm.cdf(d2)
         else:
             price = X * np.exp(-r * T_cal) * norm.cdf(-d2) \
-                    - S * np.exp((b - r) * T_cal) * norm.cdf(-d1)
+                    - S * np.exp(b * T_trade - r * T_cal) * norm.cdf(-d1)
         return price
 
     def _bgk_adjust(self, is_upper: bool) -> float:
