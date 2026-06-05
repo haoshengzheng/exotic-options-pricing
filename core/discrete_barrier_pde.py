@@ -24,20 +24,13 @@ Numerical choices
   (absorb every sub-step) is provided as a rough sanity check vs Haug-continuous.
 * Rebate-at-hit: a knocked-out node is set to K at the observation instant; the
   backward sweep discounts it from that date.
-* Knock-in via decomposition: KI = [vanilla - KO(no rebate)] + no-touch-binary(K),
-  the rebate paid at expiry if never touched (Haug term_E semantics).
 * Grid uniform in S with barrier H snapped onto a node; S0 read by 3-point
   quadratic interpolation (removes the convexity bias of linear interpolation).
-  Upper boundary uses the linearity condition V_SS = 0.
-* Barrier absorption on a node converges at first order in dS. discrete_price()
-  therefore defaults to Richardson extrapolation over two grids, which restores
-  high accuracy cheaply (essential for thin barriers such as a down-out put,
-  whose surviving value sits in a narrow band against the barrier).
 """
 import numpy as np
 from core.time_utils import (parse_dt, count_trading_seconds_precise,
                              generate_trading_day_obs, SECONDS_PER_FULL_TRADE_DAY,
-                             trading_days_per_year as _TD_PER_YEAR)
+                             trading_days_per_year)
 
 CAL_SECONDS_PER_YEAR = 365 * 24 * 3600  # match the analytical / MC T_cal basis
 
@@ -73,7 +66,7 @@ class DiscreteBarrierPDE:
     """
 
     def __init__(self, start_dt, end_dt, S, X, H, r, b, sigma, K=0.0,
-                 trading_days_per_year=_TD_PER_YEAR, n_space=800, n_sub=40,
+                 trading_days_per_year = trading_days_per_year, n_space=800, n_sub=40,
                  s_max_mult=3.0, rannacher_steps=2):
         self.start = parse_dt(start_dt); self.end = parse_dt(end_dt)
         self.S, self.X, self.H = float(S), float(X), float(H)
@@ -87,26 +80,25 @@ class DiscreteBarrierPDE:
 
         obs_strs = generate_trading_day_obs(start_dt, end_dt)
         self.obs_dts = [parse_dt(s) for s in obs_strs]
-
-        # checkpoints in calendar order: inception, obs_1, ..., obs_M(=maturity)
         checkpoints = [self.start] + self.obs_dts
+
         self.segments = []  # (delta_tau_trade, delta_t_cal) for span (c_i, c_{i+1})
         for a, c in zip(checkpoints[:-1], checkpoints[1:]):
             dtau = count_trading_seconds_precise(a, c) / (self.ann * SECONDS_PER_FULL_TRADE_DAY)
             dcal = (c - a).total_seconds() / CAL_SECONDS_PER_YEAR
             self.segments.append((dtau, dcal))
 
-    # --------------------------------------------------------- grid & operator
+    # grid & operator
     def _grid_and_ops(self, n_space):
         S_max = self.s_max_mult * max(self.S, self.X, self.H)
-        M = max(1, int(round(self.H / (S_max / n_space))))   # barrier index
+        M = max(1, int(round(self.H / (S_max / n_space))))
         ds = self.H / M
         N = int(round(S_max / ds))
-        grid = np.arange(N + 1) * ds                         # H sits on node M
+        grid = np.arange(N + 1) * ds
         A = 0.5 * self.sigma ** 2 * grid ** 2 / ds ** 2
         B = self.b * grid / (2 * ds)
-        L = A - B; U = A + B; Dsp = -2 * A                   # spatial coeffs (no -r_eff yet)
-        L[0] = 0.0; U[0] = 0.0; Dsp[0] = 0.0                 # S=0: pure-discount, decoupled row
+        L = A - B; U = A + B; Dsp = -2 * A
+        L[0] = 0.0; U[0] = 0.0; Dsp[0] = 0.0
         L[N] = -self.b * grid[N] / ds; U[N] = 0.0; Dsp[N] = self.b * grid[N] / ds  # V_SS=0 BC
         return grid, ds, N, M, L, U, Dsp
 
@@ -141,7 +133,7 @@ class DiscreteBarrierPDE:
         l2 = (s - x0) * (s - x1) / ((x2 - x0) * (x2 - x1))
         return float(y0 * l0 + y1 * l1 + y2 * l2)
 
-    # --------------------------------------------------------- backward solver
+    # backward solver
     def _solve(self, payoff_kind, knock_side, absorb_val, monitoring, n_space, n_sub):
         grid, ds, N, iH, L, U, Dsp = self._grid_and_ops(n_space)
         if payoff_kind == 'call':
@@ -169,7 +161,7 @@ class DiscreteBarrierPDE:
                 self._absorb(V, knock_side, absorb_val, iH)
         return self._read_S0(V, grid, ds, N)
 
-    # ------------------------------------------------------------- price core
+    # price core
     def _price_core(self, barrier_type, monitoring, n_space, n_sub):
         bt = barrier_type.lower()
         kind = 'call' if bt.startswith('c') else 'put'
@@ -192,7 +184,7 @@ class DiscreteBarrierPDE:
             v_ki += self._solve('const_K', knock_side, 0.0, monitoring, n_space, n_sub)
         return v_ki
 
-    # --------------------------------------------------------------- public API
+    # public API
     def price(self, barrier_type, monitoring='discrete', richardson=False):
         if not richardson:
             return self._price_core(barrier_type, monitoring, self.n_space, self.n_sub)
