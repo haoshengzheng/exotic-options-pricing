@@ -11,19 +11,10 @@ rate is converted to the trading clock segment-by-segment via
 
     r_eff = r * (delta_t_cal / delta_tau_trade),
 
-so accumulated discount over any interval equals exp(-r * delta_t_cal), exactly
-mirroring the MC and the carry-fixed Haug formula.
-
-Numerical choices
------------------
+Numerical choices:
 * Crank-Nicolson in time; Thomas algorithm for the tridiagonal solve.
 * Rannacher start-up: first `rannacher_steps` sub-steps after maturity and after
   every barrier touch are fully implicit, to damp CN oscillations at the kinks.
-* Discrete monitoring absorbs the barrier ONLY at the daily-close observation
-  nodes (from core.time_utils, shared with the MC). Continuous monitoring
-  (absorb every sub-step) is provided as a rough sanity check vs Haug-continuous.
-* Rebate-at-hit: a knocked-out node is set to K at the observation instant; the
-  backward sweep discounts it from that date.
 * Grid uniform in S with barrier H snapped onto a node; S0 read by 3-point
   quadratic interpolation (removes the convexity bias of linear interpolation).
 """
@@ -53,8 +44,8 @@ def _thomas(sub, diag, sup, rhs):
 
 class DiscreteBarrierPDE:
     """
-    PARAMETERS
-    ----------
+    PARAMETERS:
+
     start_dt, end_dt : inception / maturity timestamps (strings).
     S, X, H          : spot, strike, contract barrier.
     r, b, sigma      : risk-free rate, cost of carry, annualized vol (trading basis).
@@ -99,7 +90,7 @@ class DiscreteBarrierPDE:
         B = self.b * grid / (2 * ds)
         L = A - B; U = A + B; Dsp = -2 * A
         L[0] = 0.0; U[0] = 0.0; Dsp[0] = 0.0
-        L[N] = -self.b * grid[N] / ds; U[N] = 0.0; Dsp[N] = self.b * grid[N] / ds  # V_SS=0 BC
+        L[N] = -self.b * grid[N] / ds; U[N] = 0.0; Dsp[N] = self.b * grid[N] / ds
         return grid, ds, N, M, L, U, Dsp
 
     @staticmethod

@@ -8,9 +8,10 @@ risk-diagnostic studies and an implied-volatility surface for listed equity
 options.
 
 All pricers are implemented from first principles based on the classical
-literature — no QuantLib, no proprietary toolkits — and validated internally
-via put-call / in-out parity, Monte Carlo cross-checks, and agreement with
-QuantLib on vanilla benchmarks.
+literature —  no QuantLib or proprietary toolkits in the pricing engines (QuantLib is used only as an external cross-check on vanilla benchmarks) 
+— and validated internally via put-call / in-out parity, Monte-Carlo 
+cross-checks, a three-way (analytic / PDE / Monte-Carlo) cross-validation of the discrete barriers, 
+and agreement with QuantLib on vanilla benchmarks.
 
 
 ---
@@ -45,12 +46,12 @@ Session definitions live in `core/time_utils.py`.
 ## Project structure
 
 ```
-core/         vanilla BSM, discrete-barrier (Haug), dual-time utilities
+core/         vanilla BSM, dual-time utilities, discrete-barrier (Haug, Crank-Nicolson PDE, Monte-Carlo)
 models/       normal & knock-out accumulators (analytic + Monte Carlo)
-analysis/     pnl, comparison, bump_size, greeks, mc_convergence
+analysis/     pnl, comparison, bump_size, greeks, mc_convergence, discrete_barrier_pde_convergence
 volatility/   IV solver and vol-surface construction
 docs/         methodology and per-study write-ups
-test/         put-call & in-out parity, QuantLib cross-checks
+test/         put-call & in-out parity, QuantLib cross-checks, barrier_three_way_verification
 images/       generated figures
 ```
 ---
@@ -58,17 +59,21 @@ images/       generated figures
 
 - **Vanilla (BSM)** — Black-Scholes-Merton with the dual-time convention and
   cost-of-carry `b`; analytic Greeks.
-- **Discrete barrier (Haug)** — closed-form 8-type barrier options
-  (up/down × in/out × call/put) via the reflection principle, with the
-  **Broadie-Glasserman-Kou (1997)** continuity correction ($\beta \approx 0.5826$) mapping
-  continuous-monitoring formulas to discrete daily monitoring.
+- **Discrete barrier (three independent engines):** 
+
+  - *Haug closed-form* — reflection-principle formulas with the
+    **Broadie-Glasserman-Kou (1997)** continuity correction (β ≈ 0.5826)
+    mapping continuous-monitoring formulas to discrete daily monitoring.
+  - *Crank-Nicolson PDE* — finite-difference solution of the dual-time PDE 
+   (diffusion in trading time, discounting in calendar time). Rannacher
+    start-up and Richardson extrapolation for the barrier discontinuity.
+  - *Monte-Carlo* — discrete-monitoring simulation with antithetic variates.
 - **Accumulator** —  priced by **Carr-Madan (1998)** static replication: the
   piecewise-linear daily payoff is decomposed into a finite portfolio of
   vanilla options (see methodology below).
 - **Knock-Out Accumulator** — the accumulator with a knock-out barrier and
   rebate, built on the discrete-barrier engine.
-- Each analytic pricer has a matching **Monte Carlo** implementation using
-  **antithetic variates** for variance reduction, used for validation.
+- The Accumulator pricers each have a matching Monte-Carlo implementation (antithetic variates) for validation.
 
 **Key references:** Haug (2007); Broadie, Glasserman & Kou (1997); Carr & Madan
 (1998), *Towards a Theory of Volatility Trading*.
@@ -101,7 +106,7 @@ profiles, each surfaces a non-trivial finding:
 
 ---
 
-## Implied-volatility surface (`volatility/`)
+## Implied-volatility surface (coded in `volatility/`, documented in `docs/`)
 
 [Vol_surface](docs/Vol_Surface.md) — an IV surface for TSLA
 listed calls:
@@ -181,8 +186,12 @@ python -m analysis.mc_convergence
 
 - **Put-call parity** and **in-out barrier parity** checks on the pricers.
 - **Monte Carlo cross-checks** (antithetic variates) against every analytic
-  price, with 95% confidence intervals shown to converge as $1/\sqrt{n}$.
+  price.
 - **QuantLib agreement** on vanilla benchmarks to under 1e-6.
+- **Three-way cross-validation of discrete barriers**: Haug+BGK analytic, 
+  Crank-Nicolson PDE, and Monte-Carlo agree across all eight barrier types;
+  the PDE and MC (both exact discrete-monitoring) benchmark the BGK analytic 
+  approximation.
 
 ---
 
