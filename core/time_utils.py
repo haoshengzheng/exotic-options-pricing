@@ -96,48 +96,32 @@ def count_trading_seconds_precise(start_dt: datetime, end_dt: datetime) -> float
         curr_d += timedelta(days=1)
     return total_seconds
 
+
 def get_trading_day(dt: datetime) -> Optional[date]:
     d, t = dt.date(), dt.time()
-    if time(0, 0) <= t <= _NIGHT_END:
+    cross_midnight = _NIGHT_END < _NIGHT_START
+    if cross_midnight and t <= _NIGHT_END:
         prev_d = d - timedelta(days=1)
         if is_cn_trading_day(d) and is_cn_trading_day(prev_d):
             return d
-        return None
+        if not is_cn_trading_day(d):
+            return next_trading_day(d)
+        return d
     if _in_day_sessions(t):
-        return d if is_cn_trading_day(d) else None
-    if t >= _NIGHT_START:
-        next_td = next_trading_day(d)
-        if (next_td - d).days <= 3:
-            return next_td
-        return None
-    return None
-
-def resolve_trading_day(dt: datetime) -> Optional[date]:
-    """Like `get_trading_day`, but let the timestamps that fall in inter-session breaks return their true trading day."""
-    d, t = dt.date(), dt.time()
-    td = get_trading_day(dt)
-    if td is not None:
-        return td
-    # Pre-open: trading day starts today (if trading) or rolls forward.
+        return d if is_cn_trading_day(d) else next_trading_day(d)
     if t < _DAY_SESSIONS[0][0]:
         return d if is_cn_trading_day(d) else next_trading_day(d)
-    # Mid-morning or lunch break.
-    if time(10, 15) < t < time(10, 30) or time(11, 30) < t < time(13, 30):
-        if is_cn_trading_day(d):
-            return d
-    # Between afternoon close and night-session open: roll to next day.
-    if t > _DAY_SESSIONS[-1][1] and t < _NIGHT_START:
-        return next_trading_day(d)
-    return None
+    if t < _DAY_SESSIONS[-1][1]:
+        return d if is_cn_trading_day(d) else next_trading_day(d)
+    if t >= _NIGHT_START:
+        nd = next_trading_day(d)
+        return nd
+    return next_trading_day(d)
+
 
 def count_trading_days(start_dt: datetime, end_dt: datetime) -> int:
-    start_td = resolve_trading_day(start_dt) or next_trading_day(start_dt.date())
-    end_td   = get_trading_day(end_dt)
-    if end_td is None:
-        cur = end_dt.date()
-        while not is_cn_trading_day(cur):
-            cur -= timedelta(days=1)
-        end_td = cur
+    start_td = get_trading_day(start_dt)
+    end_td = get_trading_day(end_dt)
     if start_td > end_td:
         return 0
     count = 0
@@ -147,6 +131,7 @@ def count_trading_days(start_dt: datetime, end_dt: datetime) -> int:
             count += 1
         cur += timedelta(days=1)
     return count
+
 
 def parse_dt(s: str) -> datetime:
     for fmt in ('%Y.%m.%d %H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S',
