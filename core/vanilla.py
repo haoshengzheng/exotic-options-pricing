@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.stats import norm
-from core.time_utils import trading_days_per_year
+from core.time_utils import trading_days_per_year, count_trading_seconds_precise, SECONDS_PER_FULL_TRADE_DAY
 
 
 class VanillaBSM:
@@ -48,11 +48,11 @@ class VanillaBSM:
     def delta(self, phi: int) -> float:
         """Spot delta: dV/dS."""
         d1, _, _ = self._d1_d2()
-        return phi * np.exp((self.b - self.r) * self.T_cal) * norm.cdf(phi * d1)
+        return phi * np.exp(self.b * self.T_trade - self.r * self.T_cal) * norm.cdf(phi * d1)
 
     def gamma(self) -> float:
         d1, _, sqt = self._d1_d2()
-        return (norm.pdf(d1) * np.exp((self.b - self.r) * self.T_cal)) / (self.S * self.sigma * sqt)
+        return (norm.pdf(d1) * np.exp(self.b * self.T_trade - self.r * self.T_cal)) / (self.S * self.sigma * sqt)
 
     def vega(self) -> float:
         """
@@ -60,22 +60,34 @@ class VanillaBSM:
         Convention: report per absolute 0.01 change in sigma, so a vega of 0.42 means a 1% (0.01) vol increase adds 0.42 to option value.
         """
         d1, _, sqt = self._d1_d2()
-        return self.S * np.exp((self.b - self.r) * self.T_cal) * norm.pdf(d1) * sqt / 100
+        return self.S * np.exp(self.b * self.T_trade - self.r * self.T_cal) * norm.pdf(d1) * sqt / 100
+
+
+    def theta_components(self, phi: int):
+
+        d1, d2, sqt = self._d1_d2()
+        df_r = np.exp(-self.r * self.T_cal)
+        df   = np.exp(self.b * self.T_trade - self.r * self.T_cal)
+        theta_trade = -(self.S * df * norm.pdf(d1) * self.sigma) / (2 * sqt) \
+                      - self.b * self.S * df * norm.cdf(phi * d1) * phi
+        theta_cal   = self.r * self.S * df * norm.cdf(phi * d1) * phi \
+                      - self.r * self.K * df_r * norm.cdf(phi * d2) * phi
+        return theta_trade, theta_cal
 
     def theta(self, phi: int) -> float:
         """
-        Theta per trading day (not per calendar day).
-        Three sources of time decay are combined: 1.Diffusion term  2.Carry cost  3.Discount on strike
-        The result (annualized) is divided by `trading_days_per_year` to report per trading-day decay, matching how desks quote theta.
+        Convenience theta for a *standard* roll: one trading day of trade-clock decay plus one calendar day of cal-clock decay.
+        Each component uses its own divisor (242 vs 365) rather than a single shared one.
         """
-        d1, d2, sqt = self._d1_d2()
-        df_r = np.exp(-self.r * self.T_cal)
-        df   = np.exp((self.b - self.r) * self.T_cal)
-        theta = -(self.S * df * norm.pdf(d1) * self.sigma) / (2 * sqt) \
-                - (self.b - self.r) * self.S * df * norm.cdf(phi * d1) * phi \
-                - self.r * self.K * df_r * norm.cdf(phi * d2) * phi
-        return theta / trading_days_per_year
+        theta_trade, theta_cal = self.theta_components(phi)
+        return theta_trade / trading_days_per_year + theta_cal/ 365
 
+    def theta_per_observation(self, phi: int, now_dt, next_dt) -> float:
+        dt_trade_years = count_trading_seconds_precise(now_dt, next_dt) / \
+                         (SECONDS_PER_FULL_TRADE_DAY * trading_days_per_year)
+        dt_cal_years = (next_dt - now_dt).total_seconds() / (365* 24 * 3600)
+        theta_trade, theta_cal = self.theta_components(phi)
+        return theta_trade * dt_trade_years + theta_cal * dt_cal_years
 
     def greeks(self, phi: int) -> dict:
         return {'delta': self.delta(phi), 'gamma': self.gamma(),
