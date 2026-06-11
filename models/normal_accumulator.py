@@ -246,15 +246,21 @@ class AccumulatorMC:
 
         checkpoints = [self.start] + self.obs_dts
         self.dt_trade = []
+        self.dt_cal = []
         self.T_cal_obs = []
 
         for i in range(self.n_obs):
             trade_sec = count_trading_seconds_precise(checkpoints[i], checkpoints[i + 1])
             self.dt_trade.append(trade_sec / (self.ann * SECONDS_PER_FULL_TRADE_DAY))
+
+            step_cal_sec = (checkpoints[i + 1] - checkpoints[i]).total_seconds()
+            self.dt_cal.append(step_cal_sec / (365 * 86400))
+
             cal_sec = (self.obs_dts[i] - self.start).total_seconds()
             self.T_cal_obs.append(cal_sec / (365 * 86400))
 
         self.dt_trade = np.array(self.dt_trade)
+        self.dt_cal = np.array(self.dt_cal)
         self.T_cal_obs = np.array(self.T_cal_obs)
         self.df_obs = np.exp(-self.r * self.T_cal_obs)
 
@@ -262,7 +268,7 @@ class AccumulatorMC:
         half_paths = self.n_paths // 2
         epsilon_half = rng.standard_normal((half_paths, self.n_obs))
         epsilon      = np.vstack([epsilon_half, - epsilon_half])
-        drift        = (self.b - 0.5 * self.sigma ** 2) * self.dt_trade
+        drift = self.b * self.dt_cal - 0.5 * self.sigma ** 2 * self.dt_trade
         diffusion    = self.sigma * epsilon * np.sqrt(self.dt_trade)
         cumulative_log_return = np.cumsum(drift + diffusion, axis=1)
         S_obs        = self.S * np.exp(cumulative_log_return)
@@ -328,6 +334,14 @@ if __name__ == '__main__':
         end_dt="2026.06.23 15:00:00",
         seed=42,
     )
+
+    mc = AccumulatorMC(S=1219, K=1175, B=1263, r=0.03, b=0.0, sigma=0.23,
+                       L=3, PR=1, option_type='call',
+                       start_dt="2026.05.19 14:09:01", end_dt="2026.06.23 15:00:00", n_paths=500000)
+    S_obs = mc.simulate_gbm_path(np.random.default_rng(0))
+    print("E[S_T] =", S_obs[:, -1].mean())
+    print("forward =", 1219 * np.exp(0.08 * mc.T_cal_obs[-1]))
+    mc.summary(max_rows=10)
 
     pricer = AccumulatorReplication(S=params['S'], K=params['K'], B=params['B'],
         r=params['r'], b=params['b'], sigma=params['sigma'],
