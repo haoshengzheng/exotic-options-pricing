@@ -29,7 +29,7 @@ class HaugBarrierDualTime:
     S: Spot price.
     X: Strike (Haug uses X; equivalent to K in vanilla notation).
     H: Barrier level
-    T_cal: Time to maturity in calendar-time years (used for discounting).
+    T_cal: Time to maturity in calendar-time years (used for discounting and carry).
     T_trade: Time to maturity in trading-time years (used for diffusion).
     r: Continuously compounded risk-free rate.
     b: Cost of carry.
@@ -48,9 +48,12 @@ class HaugBarrierDualTime:
         # Standard-deviation of log-spot over [0, T_trade]
         self.sigmaT = sigma * np.sqrt(T_trade)
 
+        scale = T_cal / T_trade
+        self.b_eff = b * scale
+        self.r_eff = r * scale
 
-        self.mu = (b - sigma ** 2 / 2) / sigma ** 2
-        self.lamda = np.sqrt(self.mu ** 2 + 2 * r / sigma ** 2)
+        self.mu = (self.b_eff - sigma ** 2 / 2) / sigma ** 2
+        self.lamda = np.sqrt(self.mu ** 2 + 2 * self.r_eff / sigma ** 2)
 
 
         self.x1 = np.log(S / X)      / self.sigmaT + (1 + self.mu) * self.sigmaT
@@ -62,20 +65,20 @@ class HaugBarrierDualTime:
 
     def term_A(self, phi):
         """Vanilla-like term anchored at strike X."""
-        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)   # spot discount factor
-        df_X = np.exp(-self.r * self.T_cal)             # strike discount factor
+        df_S = np.exp((self.b - self.r) * self.T_cal)  # spot (carry-discount) factor, calendar clock
+        df_X = np.exp(-self.r * self.T_cal)            # strike discount factor
         return (phi * self.S * df_S * norm.cdf(phi * self.x1)
                 - phi * self.X * df_X * norm.cdf(phi * self.x1 - phi * self.sigmaT))
 
     def term_B(self, phi):
         """Vanilla-like term anchored at barrier H."""
-        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
+        df_S = np.exp((self.b - self.r) * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         return (phi * self.S * df_S * norm.cdf(phi * self.x2)
                 - phi * self.X * df_X * norm.cdf(phi * self.x2 - phi * self.sigmaT))
 
     def term_C(self, phi, eta):
-        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
+        df_S = np.exp((self.b - self.r) * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         pow1 = (self.H / self.S) ** (2 * (self.mu + 1))
         pow2 = (self.H / self.S) ** (2 * self.mu)
@@ -83,7 +86,7 @@ class HaugBarrierDualTime:
                 - phi * self.X * df_X * pow2 * norm.cdf(eta * self.y1 - eta * self.sigmaT))
 
     def term_D(self, phi, eta):
-        df_S = np.exp(self.b * self.T_trade - self.r * self.T_cal)
+        df_S = np.exp((self.b - self.r) * self.T_cal)
         df_X = np.exp(-self.r * self.T_cal)
         pow1 = (self.H / self.S) ** (2 * (self.mu + 1))
         pow2 = (self.H / self.S) ** (2 * self.mu)
@@ -97,8 +100,8 @@ class HaugBarrierDualTime:
         df = np.exp(-self.r * self.T_cal)
         pow2 = (self.H / self.S) ** (2 * self.mu)
         return self.K * df * (
-            norm.cdf(eta * self.x2 - eta * self.sigmaT)
-            - pow2 * norm.cdf(eta * self.y2 - eta * self.sigmaT)
+                norm.cdf(eta * self.x2 - eta * self.sigmaT)
+                - pow2 * norm.cdf(eta * self.y2 - eta * self.sigmaT)
         )
 
     def term_F(self, eta):
@@ -108,8 +111,8 @@ class HaugBarrierDualTime:
         pow_p = (self.H / self.S) ** (self.mu + self.lamda)
         pow_m = (self.H / self.S) ** (self.mu - self.lamda)
         return self.K * (
-            pow_p * norm.cdf(eta * self.z)
-            + pow_m * norm.cdf(eta * self.z - 2 * eta * self.lamda * self.sigmaT)
+                pow_p * norm.cdf(eta * self.z)
+                + pow_m * norm.cdf(eta * self.z - 2 * eta * self.lamda * self.sigmaT)
         )
 
     def price(self, barrier_type: str) -> float:
@@ -247,14 +250,14 @@ class DiscreteBarrierPricer:
 
         if T_trade <= 0:
             return max(0.0, S - X) if is_call else max(0.0, X - S)
-        d1 = (np.log(S / X) + (b + 0.5 * sigma ** 2) * T_trade) / (sigma * np.sqrt(T_trade))
+        d1 = (np.log(S / X) + b * T_cal + 0.5 * sigma ** 2 * T_trade) / (sigma * np.sqrt(T_trade))
         d2 = d1 - sigma * np.sqrt(T_trade)
         if is_call:
-            price = S * np.exp(b * T_trade - r * T_cal) * norm.cdf(d1) \
+            price = S * np.exp((b - r) * T_cal) * norm.cdf(d1) \
                     - X * np.exp(-r * T_cal) * norm.cdf(d2)
         else:
             price = X * np.exp(-r * T_cal) * norm.cdf(-d2) \
-                    - S * np.exp(b * T_trade - r * T_cal) * norm.cdf(-d1)
+                    - S * np.exp((b - r) * T_cal) * norm.cdf(-d1)
         return price
 
     def _bgk_adjust(self, is_upper: bool) -> float:
