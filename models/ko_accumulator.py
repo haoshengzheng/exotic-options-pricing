@@ -5,10 +5,6 @@ Unlike the normal accumulator (priced via Carr-Madan static replication of a pie
 the knock-out variant adds a path-dependent feature:
 once close-spot touches the boundary B on any observation datetime, the contract terminates and pays a fixed daily rebate for the remaining days.
 
-This path-dependency breaks Carr-Madan replication (which only applies to European payoffs f(S_T)).
-Instead, each observation day's contribution is priced as a portfolio of discrete-monitored barrier options
-via the Haug closed-form formula with BGK continuity correction (see core/discrete_barrier.py).
-
 Decomposition of the daily payoff:
 
 For a call KO accumulator, if the option has not knocked out (the close-spot has not touched B)
@@ -29,7 +25,6 @@ So the per-day value is:
 The total contract value sums these daily contributions across all observation dates
 
 For a put KO accumulator the barrier is below the strike, and the legs become PDO (long, with rebate) and CDO (short, no rebate).
-
 
 Greeks are computed by finite difference, since the closed form of greeks of the barrier are very complicated.
 
@@ -85,7 +80,7 @@ class KnockOutAccumulatorPricer:
                 'T_trade': T_trade_i,
             })
 
-    def _one_barrier_price(self, info: dict, barrier_type: str, rebate_val: float, S:float, sigma:float, t_shift:float=0) -> float:
+    def _one_barrier_price(self, info: dict, barrier_type: str, rebate_val: float, S:float, sigma:float, t_shift_trade: float = 0.0, t_shift_cal: float = 0.0) -> float:
         """
         Price a single knock-out barrier option for one observation date.
 
@@ -96,8 +91,9 @@ class KnockOutAccumulatorPricer:
         """
         T_trade_raw = info['T_trade']
         T_cal_raw = info['T_cal']
-        T_trade = T_trade_raw - t_shift
-        if T_trade <= 0.0:
+        T_trade = T_trade_raw - t_shift_trade
+        T_cal = T_cal_raw - t_shift_cal
+        if T_trade <= 0.0 or T_cal <= 0.0:
             return 0.0
         T_cal = T_cal_raw * (T_trade / T_trade_raw)    # Scale calendar time by the same fraction the trading time shrank.
         is_upper = ('u' in barrier_type)
@@ -110,7 +106,7 @@ class KnockOutAccumulatorPricer:
 
         return barrier_price.price(barrier_type)
 
-    def _total_price(self, S:float, sigma:float, t_shift: float = 0.0, obs_info: list[dict] | None = None,) -> float:
+    def _total_price(self, S:float, sigma:float, t_shift_trade: float = 0.0, t_shift_cal: float = 0.0, obs_info: list[dict] | None = None,) -> float:
 
         if obs_info is None:
             obs_info = self._obs_info
@@ -118,8 +114,8 @@ class KnockOutAccumulatorPricer:
         bt_short = 'puo' if self.option_type == 'call' else 'cdo'
         total = 0.0
         for info in obs_info:
-            p_long = self.PR * self._one_barrier_price(info, bt_long, self.rebate,S, sigma,t_shift)
-            p_short = self.L * self._one_barrier_price(info, bt_short, 0.0, S, sigma,t_shift)
+            p_long = self.PR * self._one_barrier_price(info, bt_long, self.rebate, S, sigma, t_shift_trade, t_shift_cal)
+            p_short = self.L * self._one_barrier_price(info, bt_short, 0.0, S, sigma, t_shift_trade, t_shift_cal)
             total += p_long - p_short
         return total
 
@@ -133,9 +129,9 @@ class KnockOutAccumulatorPricer:
 
         Delta, Gamma : central difference in spot, bump = S * dS_frac
         Vega         : central difference in vol, reported per 1% vol move
-        Theta        : forward difference in trading time, reported per trading day.
+        Theta        : dual-time forward difference.
 
-        Bump sizes default to 1e-4; see analysis/bump_size.py for a study of bump-size stability, especially near the barrier where the
+        Bump sizes default to 1e-3 and 1e-4; see analysis/bump_size.py for a study of bump-size stability, especially near the barrier where the
         knock-out discontinuity makes finite differences delicate.
         """
         p0  = self.price()
@@ -149,9 +145,10 @@ class KnockOutAccumulatorPricer:
         p_vd   = self._total_price(self.S, self.sigma - d_sigma)
         vega   = (p_vu - p_vd) / (2 * d_sigma) / 100
 
-        h_t = theta_seconds / (self.ann * SECONDS_PER_FULL_TRADE_DAY)
-        p_ht = self._total_price(self.S, self.sigma, t_shift=h_t)
-        theta= (p_ht -p0) / h_t / self.ann
+        h_trade = theta_seconds / (self.ann * SECONDS_PER_FULL_TRADE_DAY)
+        h_cal   = h_trade * (self.ann / 365.0)
+        p_ht  = self._total_price(self.S, self.sigma, t_shift_trade=h_trade, t_shift_cal=h_cal)
+        theta = (p_ht - p0) / h_trade / self.ann
 
         return {
             'delta': round(delta, 8),
@@ -237,15 +234,19 @@ class KnockOutAccumulatorMC:
 
         checkpoints = [self.start] + self.obs_dts
         self.dt_trade = []
+        self.dt_cal = []
         self.T_cal_obs = []
 
         for i in range(self.n_obs):
             trade_sec = count_trading_seconds_precise(checkpoints[i], checkpoints[i + 1])
             self.dt_trade.append(trade_sec / (self.ann * SECONDS_PER_FULL_TRADE_DAY))
+            step_cal_sec = (checkpoints[i + 1] - checkpoints[i]).total_seconds()
+            self.dt_cal.append(step_cal_sec / (365 * 86400))
             cal_sec = (self.obs_dts[i] - self.start).total_seconds()
             self.T_cal_obs.append(cal_sec / (365 * 86400))
 
         self.dt_trade = np.array(self.dt_trade)
+        self.dt_cal = np.array(self.dt_cal)
         self.T_cal_obs = np.array(self.T_cal_obs)
         self.df_obs = np.exp(-self.r * self.T_cal_obs)
 
@@ -253,7 +254,7 @@ class KnockOutAccumulatorMC:
         half_paths = self.n_paths // 2
         epsilon_half = rng.standard_normal((half_paths, self.n_obs))
         epsilon = np.vstack([epsilon_half, - epsilon_half])
-        drift = (self.b - 0.5 * self.sigma ** 2) * self.dt_trade
+        drift = self.b * self.dt_cal - 0.5 * self.sigma ** 2 * self.dt_trade
         diffusion = self.sigma * epsilon * np.sqrt(self.dt_trade)
         cumulative_log_return = np.cumsum(drift + diffusion, axis=1)
         S_obs = self.S * np.exp(cumulative_log_return)
