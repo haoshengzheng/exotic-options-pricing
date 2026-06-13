@@ -85,15 +85,19 @@ width). Measured near the barrier:
 | 0.002                   | ~14%                |
 | 0.001                   | ~3%                 |
 
-Smaller $\epsilon$ fits the true cliff more closely and shrinks the error — so why not
-use 0.001 or even smaller numbers? Because the Carr-Madan replication weights scale as $1/\epsilon$: halving $\epsilon$
-doubles the vanilla positions. Too small and two problems appear — floating-
-point cancellation from subtracting large, nearly-equal vanilla values, and
-replication legs so large they are dominated by bid-ask cost and unexecutable in
-practice. $\epsilon$  = 0.002 is the compromise: the smoothing error is small in the
-product's actual trading region (0.25% at the strike), while the replication
-weights stay bounded and the hedge stays realistic.
+Smaller $\epsilon$ fits the true cliff more closely and shrinks the pricing error
+monotonically — so the natural question is why not push $\epsilon$ arbitrarily small.
 
+The real bound is hedgeability, specifically gamma near B. The smoothing ramp
+has width $B\cdot\epsilon$. As $\epsilon$ shrinks the gamma peak is squeezed into an
+ever-narrower spot band: its height roughly saturates, but its slope (speed,
+$\partial{\Gamma}/\partial{S} $) keeps steepening, so the change of delta is unstable around B. 
+At real trading notionals — thousands to tens of thousands of
+times the unit position — that sharp delta becomes enormous, abrupt
+rebalancing demand right at the boundary. So there is a genuine trade-off between pricing accuracy and a
+hedgeable boundary. Where to sit on that trade-off is a desk decision that depends on real notional and 
+transaction costs, not something this convergence study alone settles; 
+$\epsilon$ = 0.002 is the value used here, with a distortion band of only 0.2% of B.
 ---
 
 ## Why the knock-out does not diverge as much
