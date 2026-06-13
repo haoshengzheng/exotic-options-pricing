@@ -78,22 +78,22 @@ studying barrier effects.
 
 ---
 
-## A note on Theta ≈ 0 (the dual-time framework at work)
+## A note on Theta = 0 
 
-Across all rows, Theta contributes exactly 0. This is not an error — it is a
-direct consequence of the dual-time framework.
-
-The marking window runs 15:00:01 to 21:00:00. The afternoon session closes at
-15:00 and the night session opens at 21:00, so this entire window falls in a
-**non-trading period**. The trading-seconds elapsed is essentially zero, so
-diffusion-driven time decay does not accrue. Calendar time does advance (6
-hours), but with r = 3% over 6 hours the discounting effect is negligible.
-
-Under the dual-time framework, option time value decays only during active
-exchange sessions. Marking a position across a non-trading session gap, 
-therefore shows near-zero theta. This matches desk reality: a position held
-over a closed market does not bleed trading-time theta while no trading can
-occur. It is a feature of the framework, not a modeling gap.
+Across all rows, Theta contributes = 0 — but this is partly an artifact of how
+the attribution computes it. The theta term uses a single trade-clock rate
+(`theta_per_second × trade_sec`), implicitly treating all of theta as diffusion
+decay and dropping the carry/discount part that accrues on calendar time. The
+marking window (15:00:01 to 21:00:00) falls entirely between the afternoon close
+and the night open, so trading-seconds elapsed is = 0 and this trade-clock term
+vanishes. The stricter form — already in the vanilla pricer as
+`theta_components` / `theta_per_observation` — splits theta into trade-clock
+($\partial V/\partial T_{trade}$, diffusion) and calendar-clock
+($\partial V/\partial T_{cal}$, carry + discount) components, each multiplied by
+its own elapsed time. Here the dropped calendar term is genuinely small (b = 0,
+and r = 3% over 6 hours discounts negligibly), so Theta = 0 is close to the true
+value anyway — but under non-zero carry or a window spanning an open session,
+that dropped term would become a real error.
 
 ---
 
