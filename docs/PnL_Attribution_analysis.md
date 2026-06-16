@@ -129,21 +129,21 @@ This produces a subtle and important pattern in the residual:
 
 | ΔS/S |    Actual |     Delta |    Gamma |    Vega |   Vanna | Residual |
 |------|----------:|----------:|---------:|--------:|--------:|---------:|
-| -5%  | -2046.912 | -1101.952 | -817.844 | -23.821 | -30.588 |  -72.828 |
-| -3%  | -1013.164 |  -661.171 | -294.424 | -23.821 | -18.353 |  -15.516 |
-| -1%  |  -282.926 |  -220.390 |  -32.714 | -23.821 |  -6.118 |   -0.004 |
-| +0%  |   -23.707 |     0.000 |   -0.000 | -23.821 |   0.000 |   -0.006 |
-| +1%  |   172.496 |   220.390 |  -32.714 | -23.821 |   6.118 |    2.402 |
-| +3%  |   395.724 |   661.171 | -294.424 | -23.821 |  18.353 |   34.324 |
-| +5%  |   395.724 |  1101.952 | -817.844 | -23.821 |  30.588 |  104.728 |
+| -5%  | -2046.915 | -1102.007 | -817.789 | -23.821 | -30.588 |  -72.831 |
+| -3%  | -1013.165 |  -661.204 | -294.404 | -23.821 | -18.353 |  -15.504 |
+| -1%  |  -282.925 |  -220.401 |  -32.712 | -23.821 |  -6.118 |    0.006 |
+| +0%  |   -23.706 |     0.000 |   -0.000 | -23.821 |   0.000 |   -0.006 |
+| +1%  |   172.496 |   220.401 |  -32.712 | -23.821 |   6.118 |    2.389 |
+| +3%  |   395.718 |   661.204 | -294.404 | -23.821 |  18.353 |   34.266 |
+| +5%  |   395.718 |  1102.007 | -817.789 | -23.821 |  30.588 |  104.613 |
 
 (Vomma ≈ +0.12, Theta = 0, third-order Vega ≈ 0 across all rows
 — omitted from the table for clarity.)
 
 Within ±1% spot, (Delta + Gamma + Vega + Vanna) explain the PnL almost completely (the
 residual is essentially zero at -1% and only +2.4 at +1%). The residual grows
-as spot moves further, reaching +104.7 at +5% and -72.8 at -5%. This is the
-expected O(dS³) truncation error of a second-order expansion — and its
+as spot moves further, reaching +104.6 at +5% and -72.8 at -5%. This is the
+expected O($dS^{3}$) truncation error of a second-order expansion — and its
 structure carries information about the barrier, discussed below.
 
 ### What happens to the Greeks once knocked out?
@@ -196,11 +196,11 @@ and a second-order Taylor expansion anchored at S0 cannot keep up.
 |                 | Normal  | Knock-Out |
 |-----------------|---------|-----------|
 | Residual at -5% | -44.92  | - 72.83   |
-| Residual at -3% | -11.60  | -15.52    |
-| Residual at -1% | -0.15   | -0.00     |
-| Residual at +1% | +2.27   | +2.40     |
-| Residual at +3% | +67.82  | +34.32    |
-| Residual at +5% | +332.55 | +104.73   |
+| Residual at -3% | -11.60  | -15.50    |
+| Residual at -1% | -0.15   | 0.006     |
+| Residual at +1% | +2.27   | +2.39     |
+| Residual at +3% | +67.82  | +34.27    |
+| Residual at +5% | +332.55 | +104.61   |
 
 ### The key difference: reversible soft cap vs permanent knockout
 
@@ -247,7 +247,7 @@ maps directly onto the payoff structure:
   changes gently, so higher-order terms stay small.
 
 
-**The knock-out limits the upside residual.** The KO's +5% residual (+104.73) is
+**The knock-out limits the upside residual.** The KO's +5% residual (+104.61) is
 far smaller than the normal's (+332.55). Because the KO knocks out around +3%
 and pins actual PnL at the rebate (395.72), the bounded actual value stays
 relatively close to the Delta+Gamma extrapolation. The normal accumulator, with
