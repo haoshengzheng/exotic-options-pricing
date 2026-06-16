@@ -1,5 +1,8 @@
 # Accumulator Static Replication
 
+The examples below all use call scenarios; the same logic applies to put
+scenarios.
+
 Replicating the daily piecewise-linear payoff of normal accumulator
 into a portfolio of three vanilla puts.
 
@@ -119,14 +122,13 @@ Now the payoff has:
 
 ### The Trade-Off
 
-| Smaller $\varepsilon$            | Larger $\varepsilon$ |
-|----------------------------------|---|
-| Closer to true cliff             | More payoff distortion |
-| Weights scale as $1/\varepsilon$ | Weights stay bounded |
-| Larger numerical Greeks          | More stable Greeks |
+| Smaller $\varepsilon$   | Larger $\varepsilon$   |
+|-------------------------|------------------------|
+| Closer to true cliff    | More payoff distortion |
+| Harder to hedge near B  | Easier to hedge near B |
 
-The default $\varepsilon = 0.002$ keeps replication weights around 500x —
-typically well within the bid-ask spread cost of the underlying vanillas.
+The default $\varepsilon = 0.002$ is just a value used in this example 
+and does not represent the optimal tradeoff.
 
 ### Crucial Point
 
