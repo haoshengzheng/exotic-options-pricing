@@ -44,7 +44,7 @@ def _bsm_delta(S: float, K: float, T_trade: float, T_cal: float, r: float, b: fl
     """BSM call delta under the dual-time convention (T_trade drives the diffusion d1, T_cal drives the carry/discount factor)."""
     if T_trade <= 0:
         return 1.0 if S >= K else 0.0
-    d1  = (np.log(S / K) + (b + 0.5 * sigma ** 2) * T_trade) / (sigma * np.sqrt(T_trade))
+    d1 = (np.log(S / K) + b * T_cal + 0.5 * sigma ** 2 * T_trade) / (sigma * np.sqrt(T_trade))
     return np.exp((b - r) * T_cal) * norm.cdf(d1)
 
 
@@ -107,7 +107,7 @@ class VolSurface:
     3-D surface + skew/convexity/dispersion diagnostics, and sticky-rule
     smile dynamics.
     """
-    def __init__(self, filepath: str, r: float = 0.03, b:float = 0.03, min_volume: int = 0,min_price: float = 0.50,
+    def __init__(self, filepath: str, r: float = 0.04, b:float = 0.04, min_volume: int = 0,min_price: float = 0.50,
                  max_spread_pct: float = 0.25,  delta_range: tuple = (0.05, 0.95),  lm_range: tuple = (-0.55, 0.80),  ):
 
         self.filepath       = filepath
@@ -145,7 +145,7 @@ class VolSurface:
             return np.nan
 
         # Consider the initial seed of sigma (using Brenner and Subrahmanyam method which is effective at ATM)
-        sigma = np.sqrt(2 * np.pi / T_trade) * (price_mkt / (S * np.exp((b - r) * T_trade)))
+        sigma = np.sqrt(2 * np.pi / T_trade) * (price_mkt / (S * np.exp((b - r) * T_cal)))
         sigma = float(np.clip(sigma, sigma_low, sigma_high))
 
         low, high = sigma_low, sigma_high
@@ -186,15 +186,12 @@ class VolSurface:
 
         start_dt_obj = parse_dt(self.quote_dt.strftime('%Y-%m-%d %H:%M:%S'))
         raw['expire_close'] = raw['expire_dt'] + pd.Timedelta(hours=16)
-        raw['TTE_cal']   = (raw['expire_close'] - self.quote_dt).dt.total_seconds() / (365 * 86400)
-        t_trade_map = {}
+        raw['TTE_cal'] = (raw['expire_close'] - self.quote_dt).dt.total_seconds() / (365 * 86400)
+
         raw['mid']   = 0.5 * (raw['C_BID'] + raw['C_ASK'])
         raw['log_m'] = np.log(raw['STRIKE'] / self.S)
         raw['spread_pct'] = (raw['C_ASK'] - raw['C_BID']) / raw['mid'].clip(lower=1e-6)
 
-        start_dt_obj = parse_dt(self.quote_dt.strftime('%Y-%m-%d %H:%M:%S'))
-        raw['expire_close'] = raw['expire_dt'] + pd.Timedelta(hours=16)
-        raw['TTE_cal'] = (raw['expire_close'] - self.quote_dt).dt.total_seconds() / (365 * 86400)
 
         t_trade_map = {}
         for exp_close in raw['expire_close'].unique():
@@ -285,7 +282,7 @@ class VolSurface:
         lm  = sl['log_m'].values.astype(float)
         iv  = sl['iv'].values.astype(float)
         mid = sl['mid'].values.astype(float)
-        deltas = np.array([_bsm_delta(self.S, K, T_cal, T_trade, self.r, self.b, sigma)
+        deltas = np.array([_bsm_delta(self.S, K, T_trade, T_cal, self.r, self.b, sigma)
                            for K, sigma in zip(K, iv)])
         return K, lm, iv, deltas, T_trade, exp.strftime('%Y-%m-%d'), mid, T_cal
 
@@ -460,12 +457,12 @@ class VolSurface:
                             s=45, zorder=4, edgecolors='k', lw=0.3)
 
             # SVI fit overlay
-            log_fwd_m = lm - (self.b - self.r) * T_trade
+            log_fwd_m = lm - (self.b - self.r) * T_cal
             if len(lm) >= 4:
                 params = _fit_svi(log_fwd_m, iv, T_trade)
                 if params is not None:
                     x_fit   = np.linspace(log_fwd_m.min(), log_fwd_m.max(), 200)
-                    lm_fit  = x_fit + (self.b - self.r) * T_trade
+                    lm_fit  = x_fit + (self.b - self.r) * T_cal
                     w_fit   = _svi_w(x_fit, *params)
                     iv_fit  = np.sqrt(np.maximum(w_fit / T_trade, 0))
                     ax.plot(lm_fit * 100, iv_fit * 100, 'k-', lw=1.5,
@@ -684,7 +681,7 @@ class VolSurface:
 
 
 def main():
-    filepath = 'volatility/tsla_option.xlsx'
+    filepath = 'C:/Users/windows10/Documents/GitHub/Option-pricing-analysis/volatility/tsla_option.xlsx'
     print('Constructing TSLA vol surface...\n')
     vs = VolSurface(filepath, r=0.04, b=0.04, min_volume=50, min_price=0.50,
                     max_spread_pct=0.25, delta_range=(0.05, 0.95))
