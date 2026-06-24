@@ -231,7 +231,7 @@ class VolSurface:
         sigma_high = 10.0
         df = df[df['iv'].notna()]
         df = df[df['iv'] > 0.01]
-        df = df[df['iv'] < sigma_high - 0.01]
+        df = df[df['iv'] < sigma_high ]
 
         delta_low, delta_high = self.delta_range
         df['delta'] = [
@@ -310,20 +310,6 @@ class VolSurface:
         """
         How the smile moves when spot goes S0 -> S1 = S0*(1+dS), under two desk
         conventions. x is log-moneyness relative to the NEW spot S1.
-
-        Sticky Strike (SS):     sigma(K, T) fixed.
-            Each strike keeps its vol. In new-moneyness space the smile shifts by
-            ds = ln(S1/S0):  sigma_SS(x) = sigma_old(x + ds).
-            Hedging delta needs no correction: Delta_eff = Delta_BSM.
-
-        Sticky Moneyness (SM):  sigma(ln(K/S), T) fixed.
-            The smile is pinned in spot-moneyness space; in new-moneyness space it
-            is identical to the old smile: sigma_SM(x) = sigma_old(x).
-            Hedging delta: Delta_eff = Delta_BSM - vega*skew/S.
-
-        Sticky Delta is not shown separately: with the smile parameterised in
-        spot-moneyness, fixing delta (hence d1) at constant sigma fixes ln(K/S)
-        too, so Sticky Delta coincides with Sticky Moneyness here.
         """
         if dS_pcts is None:
             dS_pcts = [-0.10, -0.05, 0.05, 0.10]
@@ -522,7 +508,7 @@ class VolSurface:
         ax3d.set_zlabel('IV (%)', labelpad=8)
         ax3d.set_title('3-D Implied Volatility Surface', fontsize=11)
         ax3d.view_init(elev=25, azim=-55)
-        cb = fig.colorbar(surf, ax=ax3d, shrink=0.5, pad=0.05)
+        cb = fig.colorbar(surf, ax=ax3d, shrink=0.5, pad=0.1)
         cb.set_label('IV (%)')
 
         # Heatmap
@@ -566,7 +552,7 @@ class VolSurface:
         ax_cv.axhline(0, color='gray', lw=0.8, ls='--')
         ax_cv.set_xlabel('Days to Expiry')
         ax_cv.set_ylabel('½(IV_25Δ + IV_75Δ) − IV_ATM (%)')
-        ax_cv.set_title('Smile Convexity (25Δ Butterfly)')
+        ax_cv.set_title('Smile Convexity (25Δ Butterfly proxy)')
         ax_cv.grid(True, alpha=0.3, axis='y')
 
         # Smile dispersion (vol-of-vol proxy)

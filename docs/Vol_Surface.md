@@ -116,9 +116,9 @@ the smile shape are well-behaved.
 
 ## 3. Surface and Diagnostics
 
-![Surface](../images/tsla_vol_surface.png)
+![Surface](images\tsla_vol_surface.png)
 
-### 3-D Surface & Heatmap
+### 3-D Surface & Heatmap (the RBF interpolant)
 
 The 3-D surface and its heatmap show the RBF interpolant over
 (log-moneyness, days to expiry). Several features are worth reading off it:
@@ -150,36 +150,53 @@ The 3-D surface and its heatmap show the RBF interpolant over
   extrapolation toward the edges — a caveat for any pricing read off the
   far corners.
 
-All three lower-panel diagnostics use **call delta** to locate strikes: $75\Delta$ is
-a low strike (ITM call, downside), $50\Delta$ is ATM, $25\Delta$ is a high strike (OTM call,
-upside). There are always two points to keep in mind:
+### Lower-panel diagnostics (built on market quotes, **not** the RBF)
 
-1. The points are the **nearest available quotes** to 0.2 / 0.25 / 0.50 / 0.75 / 0.8
-  delta, not interpolated to exact delta. On sparse expiries (especially the
-  shortest tenors, which have few strikes) these anchors are approximate, so
-  the metrics there are noisy.
+A crucial distinction from the 3-D surface above: the three lower panels
+(skew, convexity, dispersion) are computed **directly from the cleaned market
+quotes**, not from the RBF interpolant. For each expiry they locate strikes by
+picking, among the **actual quotes**, the one whose **call delta** is nearest to
+the target — $75\Delta$, $50\Delta$, $25\Delta$ — via `argmin |delta − target|`. So these
+metrics describe the **raw market smile**; the RBF surface is not involved.
 
-2. The metrics assume the smile is anchored at ATM (50Δ). In this data the smile
-  minimum often sits well to the right of 50Δ (at lower delta / higher strike),
-  and the longest tenors are nearly monotone with no clear bottom — so
-  ATM-referenced metrics can misrepresent the true smile shape.
+Two caveats run through **all three** panels:
+
+1. **Nearest-quote anchoring, not exact delta.** The anchors are the nearest
+  available quotes to 0.25 / 0.50 / 0.75 delta, neither interpolated to the
+  exact delta nor read off the RBF. On sparse expiries (especially the shortest
+  tenors, which have few strikes) "nearest" can be far from the target delta, so
+  the metric there **mostly reflects anchor misplacement rather than true smile
+  shape** — read these as qualitative trends, not precise numbers.
+
+2. **ATM-referenced.** The metrics assume the smile is anchored at ATM (50Δ). In
+  this data the smile minimum often sits well to the right of 50Δ (lower delta /
+  higher strike), and the longest tenors are nearly monotone with no clear
+  bottom — so ATM-referenced metrics can misrepresent the true shape.
 
   
 - **Skew term structure** ($25\Delta − 75\Delta$):the high-strike IV minus the
   low-strike IV. It is **negative at every tenor**, confirming the equity put
   skew — low strikes carry higher IV as the market pays up for downside
   protection. The magnitude varies non-monotonically across tenors rather than
-  decaying cleanly with maturity; the single very large value near 100 days is
-  a sparse/noisy expiry (it also shows up as an outlier in the convexity panel).
+  decaying cleanly with maturity; the single very large value near 100 days is a
+sparse/noisy expiry where the anchors are badly misplaced (it also shows
+up as an outlier in the convexity panel), not a genuine skew spike.
 
-- **Smile convexity** ($25\Delta$ butterfly): the average
-  of the two wings minus the ATM IV — a measure of curvature **relative to ATM**.
-  It is positive when the wings sit above ATM. Crucially, because the actual
-  smile minimum is often not at 50Δ but further toward the upside, this
-  ATM-referenced butterfly understates the true convexity, and the occasional
-  negative value reflects the trough sitting away from 50Δ (so $\text{IV}_{25\Delta}$ falls
-  near or below $\text{IV}_{50\Delta}$) rather than a genuinely inverted smile. A butterfly
-  centred on the actual minimum would be a cleaner convexity measure.
+
+- **Smile convexity** ($25\Delta$ butterfly **proxy**): $\tfrac12(\text{IV}_{25\Delta}$
+  $+ \text{IV}_{75\Delta}) - \text{IV}_{50\Delta}$, a measure of curvature
+  **relative to ATM**, positive when the wings sit above ATM. It is called a
+  **proxy** because the three anchors are nearest-quote approximations, not exact
+  deltas. A negative value here has **two distinct sources**: (a) the true smile minimum is not at 50Δ but toward the upside, so
+  $\text{IV}_{25\Delta}$ falls near or below $\text{IV}_{50\Delta}$ — a real-shape
+  effect; and (b) — **more often on sparse expiries** — the anchors are simply
+  misplaced relative to their target deltas, so the combination
+  $\tfrac12(25 + 75) - 50$ is taken at the wrong points and the result is noise
+  unrelated to the smile's real curvature. So a negative convexity does **not**
+  imply a genuinely inverted smile; on thin tenors it is usually (b). A butterfly
+  centred on the actual minimum, computed off a fitted slice rather than
+  nearest quotes, would be a cleaner curvature measure.
+
 
 - **Smile dispersion** (vol-of-vol proxy): how widely IV varies across
   strikes within one expiry — low for a flat smile, high for a steep or convex
@@ -187,8 +204,19 @@ upside). There are always two points to keep in mind:
   volatility of volatility; a wider IV spread loosely indicates more uncertainty
   priced into vol itself. It is only a proxy, not a vol-of-vol calibrated from a
   stochastic-volatility model, and it too is sensitive to how many clean points
-  fall in the $20\Delta–800\Delta$ band at each tenor.
+  fall in the $20\Delta–80\Delta$ band at each tenor.
 
+### How these diagnostics relate to no-arbitrage
+
+These panels — together with the total-variance monotonicity in the term-structure
+plot (§1) — are **after-the-fact arbitrage diagnostics on the market-quote layer**:
+total-variance monotonicity flags calendar arbitrage, the butterfly proxy flags
+a butterfly tendency. They do **not** validate the RBF interpolant itself. The RBF
+is a smooth interpolant that does not enforce no-arbitrage, and its interpolated
+points — especially at maturities with no listed quotes — are neither constrained
+nor checked by these diagnostics. Guaranteeing the whole surface is arbitrage-free
+would require an SSVI calibration with the constraints imposed jointly (see
+Limitations).
 ---
 
 ## 4. Sticky Rules — the desk-relevant part
