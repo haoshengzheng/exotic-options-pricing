@@ -38,10 +38,8 @@ class VanillaBSM:
                       self.K * np.exp(-self.r * self.T_cal) * norm.cdf(phi * d2))
 
     def _d1_d2(self):
-        """Floor T_trade to avoid division by zero when computing Greeks. 1e-6 is in stable zone of bump size."""
-        t_tr = max(1e-6, self.T_trade)
-        sqt = np.sqrt(t_tr)
-        d1 = (np.log(self.S / self.K) + self.b * self.T_cal + 0.5 * self.sigma ** 2 * t_tr) / \
+        sqt = np.sqrt(self.T_trade)
+        d1 = (np.log(self.S / self.K) + self.b * self.T_cal + 0.5 * self.sigma ** 2 * self.T_trade) / \
              (self.sigma * sqt)
         d2 = d1 - self.sigma * sqt
         return d1, d2, sqt
