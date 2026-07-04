@@ -101,36 +101,35 @@ def compute_pnl(option_type, base_params:dict, next_pnl_dt:str, dS_fracs:tuple=(
     greeks0 = p0.greeks()
     theta0 = theta_per_second(p0)
 
+    def V_t0(S, sigma):
+        return build_pricer(option_type, base_params, S, sigma, t0_str).price()
 
-    def V1(S, sigma):
+    def V_t1(S, sigma):
         return build_pricer(option_type, base_params, S, sigma, t1_str).price()
 
     pnl_matrix = np.zeros((len(dS_fracs), len(dsigma)))
     for i, fs in enumerate(dS_fracs):
         for j, ds in enumerate(dsigma):
-            pnl_matrix[i, j] = V1(S0 * (1 + fs), sigma0 + ds) - V0
+            pnl_matrix[i, j] = V_t1(S0 * (1 + fs), sigma0 + ds) - V0
 
 
     # Vanna and Vomma Calculation
     eps_S = S0 * 1e-4
     eps_v = 1e-4
-    v_up = V1(S0 + eps_S, sigma0 + eps_v)
-    v_dn = V1(S0 - eps_S, sigma0 - eps_v)
-    v_mix1 = V1(S0 + eps_S, sigma0 - eps_v)
-    v_mix2 = V1(S0 - eps_S, sigma0 + eps_v)
+    v_up = V_t0(S0 + eps_S, sigma0 + eps_v)
+    v_dn = V_t0(S0 - eps_S, sigma0 - eps_v)
+    v_mix1 = V_t0(S0 + eps_S, sigma0 - eps_v)
+    v_mix2 = V_t0(S0 - eps_S, sigma0 + eps_v)
     vanna0 = (v_up + v_dn - v_mix1 - v_mix2) / (4 * eps_S * eps_v)
 
-    v_sigma_up = V1(S0, sigma0 + eps_v)
-    v_sigma_dn = V1(S0, sigma0 - eps_v)
-    v_sigma_mid = V1(S0, sigma0)
+    v_sigma_up = V_t0(S0, sigma0 + eps_v)
+    v_sigma_dn = V_t0(S0, sigma0 - eps_v)
+    v_sigma_mid = V_t0(S0, sigma0)
     vomma0 = (v_sigma_up - 2 * v_sigma_mid + v_sigma_dn) / (eps_v ** 2)
 
-
-    v_third_up = V1(S0, sigma0 + 2 * eps_v)
-    v_third_mid = V1(S0, sigma0 + eps_v)
-    v_third_dn = V1(S0, sigma0)
-    vomma1 = (v_third_up -2 * v_third_mid + v_third_dn) / (eps_v ** 2)
-    third_order_vega = (vomma1 - vomma0) / eps_v
+    v_sigma_2up = V_t0(S0, sigma0 + 2 * eps_v)
+    v_sigma_2dn = V_t0(S0, sigma0 - 2 * eps_v)
+    third_order_vega = (v_sigma_2up - 2 * v_sigma_up + 2 * v_sigma_dn - v_sigma_2dn) / (2 * eps_v ** 3)
 
 
     j_mid = len(dsigma) // 2
@@ -140,7 +139,7 @@ def compute_pnl(option_type, base_params:dict, next_pnl_dt:str, dS_fracs:tuple=(
         dS = S0 * fs
         sigma_change = dsigma[j_mid]
 
-        actual = V1(S0 + dS, sigma0 + sigma_change) - V0
+        actual = V_t1(S0 + dS, sigma0 + sigma_change) - V0
         delta_pnl = greeks0['delta'] * dS
         gamma_pnl = 0.5 * greeks0['gamma'] * dS**2
         vega_pnl = greeks0['vega'] * sigma_change * 100
