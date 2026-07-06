@@ -48,53 +48,84 @@ thus can gain a better strike. As rebate increase, the strike become increasingl
 
 ---
 
-## 2. Pin Risk Near the Barrier
+## 2. Pin Risk Near the Barrier: From Baseline Pin to Near-Close Fixing Risk
 
-![Pin_Risk](../images/Pin_Risk.png)
+Pin risk has two regimes. Away from the observation close, remaining diffusion
+time still smooths the barrier event, so the KO's risk appears as a localized Delta
+cliff and Gamma spike. Near the observation close, that smoothing almost
+disappears: the barrier event becomes a fixing outcome, and both the normal and
+KO accumulators can show large local Gamma.
 
-This is the most important risk diagnostic for the knock-out product. The plot
-zooms into a ±0.5% window around the barrier B=3409 and shows Delta (left) and
-Gamma (right) for both products.
+### Baseline pin risk away from fixing time
 
-### The BGK gray zone
+![Pin_Risk](images/Pin_Risk.png)
 
-The shaded band runs from the contractual barrier B=3409 to the
-model-adjusted barrier B_adj=3420.51 — a width of 11.5 points, or 0.338% of B.
-The adjustment comes from the BGK discrete-monitoring correction (the model
-shifts the effective barrier outward because daily monitoring is less likely to
-touch than continuous monitoring; 
+In the baseline pin-risk plot, spot is close to the barrier but the observation
+close is not yet the dominant feature. The shaded band runs from the contractual
+barrier B=3409 to the model-adjusted barrier B_adj=3420.51, a width of 11.5
+points. This is the BGK gray zone: daily monitoring is less
+likely to touch than continuous monitoring, so the continuous-barrier formula
+uses an outward-shifted effective barrier.
 
-**Inside this band, contract and model disagree:**
-- By the *contract*, spot has passed B=3409, so the option has knocked out.
-- By the *model*, spot has not yet reached B_adj=3420.51, so the option is
-  still priced as alive.
+In this regime, the main story is the KO's model-state transition. As spot
+approaches B_adj, the KO Delta falls toward zero because the model is switching
+from an alive position to the knocked-out rebate state. Gamma becomes locally
+negative with peak around -1 because it is the slope of this Delta drop. 
 
-This is an operational hazard, not just a numerical one. A desk relying on the
-model's Greeks would keep hedging a position that, contractually, no longer
-exists. In practice this band is flagged for manual desk intervention rather
-than automated hedging.
+The normal accumulator is much smoother in this baseline view. It has a payoff
+cliff at B, but it does not terminate the remaining contract, so its local
+Greeks are less explosive away from the fixing time.
 
-### The pin: Delta discontinuity and Gamma spike
+### Near-close fixing risk: the main risk
 
-- **Delta (left panel):** the KO's delta (orange dashed) drops sharply — from
-  about 3.7 to near zero — at the right edge of the gray zone. This is the
-  knock-out "switching off" the position's spot exposure. The normal product's
-  delta (blue) declines smoothly through the band.
+![Near_Close_Pin_Risk](../images/Near_Close_Pin_Risk.png)
 
-- **Gamma (right panel):** the KO's gamma plunges to a sharp negative spike
-  (around -8) at B_adj, the mark of **pin risk**. Gamma is the rate of
-  change of delta; the near-discontinuous delta drop represents an extreme,
-  localized gamma. The normal product's gamma stays mild and smooth.
+The risk becomes more severe when spot is near the barrier and the observation
+close is near. The remaining diffusion window is then very small, so the
+barrier is no longer mainly a smooth path-probability problem. It becomes almost
+a binary fixing question:
 
-A large localized gamma means the hedge ratio changes violently for a tiny spot
-move near the barrier. Delta-hedging through this region is both expensive
-(rapid rebalancing) and unstable (the hedge can flip), which is why barrier
-products near the barrier are difficult to manage and why this  region is handed 
-to manual oversight.
+> Will the close finish below or above the barrier?
 
-(See [`analysis/bump_size.py`](../../analysis/bump_size.py) for how the
-finite-difference Greeks themselves become numerically unstable in exactly this
-region.)
+This is why near-close pin risk becomes **much more severe**.
+
+- **KO Delta:** as spot approaches the barrier, a small upward move increases
+  the ordinary accumulator payoff, but it also increases the probability of
+  knock-out at the fixing. Near the barrier, the second effect can dominate:
+  the product may lose remaining continuation value and receive only the
+  rebate. This is why KO Delta can fall sharply, turn negative, and then return
+  toward zero once the model treats the contract as knocked out.
+
+- **KO Gamma:** when Delta collapses, Gamma turns strongly negative; when Delta
+  recovers from negative back toward zero, Gamma turns strongly positive. The
+  double spike is not a stable "good gamma / bad gamma" signal. Near the fixing, 
+  the Greeks are highly unstable and should be treated as a risk warning rather 
+  than reliable hedge ratios.
+
+- **Normal Delta/Gamma:** the normal accumulator does not knock out, but it is
+  not immune near the fixing. Its daily payoff still has a cliff at B: above
+  the barrier, the daily payoff is zero. When there is little time left before
+  the close, this payoff cliff is no longer smoothed by much future diffusion.
+  The normal product can therefore also show a Delta drop and Gamma sign
+  changes. The economic difference is that the normal product has current
+  observation payoff-cliff risk; the KO has full survival/termination risk.
+
+### Risk-management implication
+
+Near the fixing, the contractual barrier B is the only operational trigger that matters. 
+The knock-out decision is made by the actual barrier, not by the BGK-adjusted 
+barrier B_adj. B_adj is only a modeling artifact of the Haug+BGK approximation; it may 
+explain where the model's discontinuity appears, but it should not be treated as a trading 
+or hedging trigger in the fixing window.
+
+This is an operational pin risk. Once spot is close to B near 
+the observation close, local finite-difference Delta and Gamma should not be used as hedge 
+ratios, and their exact values should not be over-interpreted. The useful signal is that 
+the Greeks have become unstable at all. The desk should switch to monitoring the actual 
+fixing rule, scenario repricing around the contractual barrier B, and manual risk control.
+
+(See [`analysis/bump_size.py`](../../analysis/bump_size.py) for why the
+finite-difference Greeks themselves become unreliable near the barrier.)
 
 ---
 
