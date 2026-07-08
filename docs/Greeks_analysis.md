@@ -130,10 +130,14 @@ price and delta overlays.
 **vs Spot — another maturity-dependent sign flip.** Vega measures sensitivity
 to volatility:
 
-- **T=100%:** vega is **negative** near the barrier — with long time left, the
-  dominant effect of volatility is a greater chance of an early knock-out with little rebate.
-- **T=25% / 50%:** vega turns **positive** — close to expiry, volatility could cause 
-   spot changes from barrier level to the under barrier level which can generate the high-profit.
+- **T=100%:** vega is **negative** near the barrier — with long time left, higher 
+   volatility mainly increases two probabilities: early knock-out at the barrier with low rebate, 
+   and future moves below the strike into the leveraged-loss region. These effects reduce 
+   continuation value, so vega is negative.
+- **T=25% / 50%:** vega turns **positive** near the barrier. Close to expiry, higher volatility can 
+   move spot away from the imminent knock-out zone and keep it in the alive positive-payoff region, 
+   K < S < B, where the holder still earns PR(S-K) per day. Because there is little time left, the 
+   leveraged downside has less time to dominate.
 - **T=75%:** the two effects roughly cancel, and vega is near **zero**.
 
 In general, when the price is far from the barrier level, the position is penalized 
