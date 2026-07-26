@@ -1,6 +1,5 @@
 """
-Crank-Nicolson PDE pricer for discretely-monitored single-barrier options
-under the dual-time (trading-time / calendar-time) framework.
+Crank-Nicolson PDE pricer for discretely-monitored single-barrier options.
 
 It solves the dual-time BSM PDE on a finite-difference grid:
 
@@ -80,30 +79,41 @@ class DiscreteBarrierPDE:
             self.segments.append((dtau, dcal))
 
     # grid & operator
-    def _grid_and_ops(self, n_space):
+    def _grid(self, n_space):
         S_max = self.s_max_mult * max(self.S, self.X, self.H)
         M = max(1, int(round(self.H / (S_max / n_space))))
         ds = self.H / M
         N = int(round(S_max / ds))
         grid = np.arange(N + 1) * ds
-        A = 0.5 * self.sigma ** 2 * grid ** 2 / ds ** 2
-        B = self.b * grid / (2 * ds)
-        L = A - B; U = A + B; Dsp = -2 * A
-        L[0] = 0.0; U[0] = 0.0; Dsp[0] = 0.0
-        L[N] = -self.b * grid[N] / ds; U[N] = 0.0; Dsp[N] = self.b * grid[N] / ds
-        return grid, ds, N, M, L, U, Dsp
+        return grid, ds, N, M
+
+    def _increment_ops(self, grid, ds, N, dtau, dcal):
+        """Return the dimensionless operator increment for one time sub-step."""
+        A = 0.5 * self.sigma ** 2 * grid ** 2 / ds ** 2 * dtau
+        B = self.b * grid / (2 * ds) * dcal
+        R = self.r * dcal
+        lower = A - B
+        upper = A + B
+        diag = -2 * A - R
+        lower[0] = 0.0
+        upper[0] = 0.0
+        diag[0] = -R
+        lower[N] = -self.b * grid[N] / ds * dcal
+        upper[N] = 0.0
+        diag[N] = self.b * grid[N] / ds * dcal - R
+        return lower, upper, diag
 
     @staticmethod
-    def _step(V, dtau, theta, r_eff, L, U, Dsp, N):
-        diag_sp = Dsp - r_eff
-        sub  = -theta * dtau * L
-        diag = 1.0 - theta * dtau * diag_sp
-        sup  = -theta * dtau * U
-        LopV = np.empty(N + 1)
-        LopV[1:N] = L[1:N] * V[0:N-1] + diag_sp[1:N] * V[1:N] + U[1:N] * V[2:N+1]
-        LopV[0]   = diag_sp[0] * V[0]
-        LopV[N]   = L[N] * V[N-1] + diag_sp[N] * V[N]
-        rhs = V + (1.0 - theta) * dtau * LopV
+    def _step(V, theta, lower, upper, diag_op, N):
+        sub = -theta * lower
+        diag = 1.0 - theta * diag_op
+        sup = -theta * upper
+        opV = np.empty(N + 1)
+        opV[1:N] = (lower[1:N] * V[0:N - 1] + diag_op[1:N] * V[1:N]
+                    + upper[1:N] * V[2:N + 1])
+        opV[0] = diag_op[0] * V[0]
+        opV[N] = lower[N] * V[N - 1] + diag_op[N] * V[N]
+        rhs = V + (1.0 - theta) * opV
         return _thomas(sub, diag, sup, rhs)
 
     @staticmethod
@@ -126,7 +136,7 @@ class DiscreteBarrierPDE:
 
     # backward solver
     def _solve(self, payoff_kind, knock_side, absorb_val, monitoring, n_space, n_sub):
-        grid, ds, N, iH, L, U, Dsp = self._grid_and_ops(n_space)
+        grid, ds, N, iH = self._grid(n_space)
         if payoff_kind == 'call':
             V = np.maximum(grid - self.X, 0.0)
         elif payoff_kind == 'put':
@@ -137,18 +147,21 @@ class DiscreteBarrierPDE:
         active = knock_side is not None
         if active:
             self._absorb(V, knock_side, absorb_val, iH)   # maturity is an observation
-        for k in range(len(self.segments) - 1, -1, -1):   # march maturity -> inception
+        for k in range(len(self.segments) - 1, -1, -1):  # march maturity -> inception
             dtau_tot, dcal_tot = self.segments[k]
-            if dtau_tot <= 0:
+            if dtau_tot <= 0 and dcal_tot <= 0:
                 continue
-            r_eff = self.r * (dcal_tot / dtau_tot)
             dtau = dtau_tot / n_sub
+            dcal = dcal_tot / n_sub
+            lower, upper, diag_op = self._increment_ops(grid, ds, N, dtau, dcal)
+            needs_smoothing = (k == len(self.segments) - 1
+                               or (active and monitoring == 'discrete'))
             for j in range(n_sub):
-                theta = 1.0 if j < self.rannacher else 0.5
-                V = self._step(V, dtau, theta, r_eff, L, U, Dsp, N)
+                theta = 1.0 if needs_smoothing and j < self.rannacher else 0.5
+                V = self._step(V, theta, lower, upper, diag_op, N)
                 if active and monitoring == 'continuous':
                     self._absorb(V, knock_side, absorb_val, iH)
-            if active and monitoring == 'discrete' and k >= 1:   # obs, not inception
+            if active and monitoring == 'discrete' and k >= 1:  # obs, not inception
                 self._absorb(V, knock_side, absorb_val, iH)
         return self._read_S0(V, grid, ds, N)
 

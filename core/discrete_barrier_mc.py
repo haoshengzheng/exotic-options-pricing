@@ -1,13 +1,11 @@
 """
-Monte-Carlo pricer for discretely-monitored single-barrier options under the
-dual-time (trading-time / calendar-time) framework.
+Monte-Carlo pricer for discretely-monitored single-barrier options.
 
-Each log-path accumulates drift and diffusion in TRADING time:
+For each observation interval, carry accrues in CALENDAR time and diffusion in
+TRADING time.
 
-    S_t = S0 * exp( (b - sigma^2/2) * tau_trade + sigma * W(tau_trade) )
-
-so the forward is E[S_T] = S0 * exp(b * T_trade). Discounting uses CALENDAR
-time, exp(-r * T_cal). Antithetic variates are used for variance reduction.
+Hence E[S_T] = S0 * exp(b * T_cal), while discounting is exp(-r * T_cal).
+Antithetic variates are used for variance reduction.
 
 Rebate convention: rebate-at-hit. A knocked-out path receives K at the first
 breached observation and discounts it from THAT observation's calendar time
@@ -21,21 +19,22 @@ from core.time_utils import (parse_dt, count_trading_seconds_precise,
 
 CAL_SECONDS_PER_YEAR = 365 * 24 * 3600  
 
-def simulate_paths_discrete(S0, b, sigma, dt_steps, n_paths, rng):
+def simulate_paths_discrete(S0, b, sigma, dt_trade_steps, dt_cal_steps, n_paths, rng):
     """Simulate GBM in trading time at the observation checkpoints.
     Returns S of shape [n_paths, n_steps+1]; column 0 is S0, columns 1. are
     the prices at each observation date. Uses antithetic variates."""
     assert n_paths % 2 == 0, "n_paths must be even (antithetic variates)"
     half = n_paths // 2
-    dt_arr = np.asarray(dt_steps, dtype=float)
-    n_steps = len(dt_arr)
+    dt_trade = np.asarray(dt_trade_steps, dtype=float)
+    dt_cal = np.asarray(dt_cal_steps, dtype=float)
+    n_steps = len(dt_trade)
     eps_half = rng.standard_normal((half, n_steps))
     eps = np.vstack([eps_half, -eps_half])
-    W = np.zeros((n_paths, n_steps + 1))
-    W[:, 1:] = np.cumsum(eps * np.sqrt(dt_arr), axis=1)
-    t = np.concatenate([[0.0], np.cumsum(dt_arr)])
-    drift = (b - 0.5 * sigma ** 2) * t
-    return S0 * np.exp(drift + sigma * W)
+    drift = b * dt_cal - 0.5 * sigma ** 2 * dt_trade
+    diffusion = sigma * eps * np.sqrt(dt_trade)
+    cumulative_log_return = np.cumsum(drift + diffusion, axis=1)
+    log_paths = np.column_stack([np.zeros(paths), cumulative_log_return])
+    return S0 * np.exp(log_paths)
 
 
 class DiscreteBarrierMC:
@@ -44,7 +43,7 @@ class DiscreteBarrierMC:
 
     start_dt, end_dt : inception / maturity timestamps (strings).
     S, X, H          : spot, strike, contract barrier.
-    r, b, sigma      : risk-free rate, cost of carry, annualized vol (trading basis).
+    r, b, sigma      : risk-free rate, cost of carry, annualized vol .
     K                : cash rebate (rebate-at-hit for knock-out; at-expiry-if-no-touch for knock-in).
     n_paths          : number of MC paths (even; antithetic).
     seed             : RNG seed.
@@ -66,16 +65,20 @@ class DiscreteBarrierMC:
         self.n_obs = len(self.obs_dts)
 
         checkpoints = [self.start] + self.obs_dts
-        self.dt_steps = [count_trading_seconds_precise(a, c) / (self.ann * SECONDS_PER_FULL_TRADE_DAY)
+        self.dt_trade_steps = [count_trading_seconds_precise(a, c) / (self.ann * SECONDS_PER_FULL_TRADE_DAY)
                          for a, c in zip(checkpoints[:-1], checkpoints[1:])]
-        # calendar years from inception to each observation (for rebate-at-hit discounting)
+
+        self.dt_cal_steps = [(c - a).total_seconds() / CAL_SECONDS_PER_YEAR
+                             for a, c in zip(checkpoints[:-1], checkpoints[1:])]
+
         self.t_cal_obs = np.array([(o - self.start).total_seconds() / CAL_SECONDS_PER_YEAR
                                    for o in self.obs_dts])
 
 
     def _simulate(self):
         rng = np.random.default_rng(self.seed)
-        return simulate_paths_discrete(self.S, self.b, self.sigma, self.dt_steps, self.n_paths, rng)
+        return simulate_paths_discrete(self.S, self.b, self.sigma, self.dt_trade_steps, self.dt_cal_steps,
+                                       self.n_paths, rng)
 
     def price_with_se(self, barrier_type):
         """Return (price, standard_error). SE is computed on antithetic pair
